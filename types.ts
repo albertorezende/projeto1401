@@ -6,6 +6,10 @@ export interface UserProfile {
   avatarUrl?: string;
 }
 
+export interface UserAccount extends UserProfile {
+  password?: string; // Only used for the local "database" simulation
+}
+
 export interface ShoppingItem {
   id: string;
   name: string;
@@ -25,8 +29,20 @@ export interface ShoppingList {
   totalEstimated: number;
 }
 
+// Represents the data stored for each specific user
+export interface UserData {
+  lists: ShoppingList[];
+  activeListId: string | null;
+}
+
 export interface AppState {
   user: UserProfile | null;
   lists: ShoppingList[];
   activeListId: string | null;
+}
+
+// The full structure of our local "Database"
+export interface MockDatabase {
+  accounts: UserAccount[];
+  contentStore: Record<string, UserData>; // Key is user ID
 }

@@ -5,26 +5,30 @@ import { useApp } from '../context/AppContext';
 
 const WelcomeScreen: React.FC = () => {
   const navigate = useNavigate();
-  const { setUser } = useApp();
+  const { login, register } = useApp();
   const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleAuth = (type: 'login' | 'register') => {
+  const handleAction = (type: 'login' | 'register') => {
     if (!name.trim()) {
-      setError('Por favor, digite seu nome');
+      setError('Digite seu nome');
+      return;
+    }
+    if (!password.trim()) {
+      setError('Digite sua senha');
       return;
     }
 
-    // In this local version, we treat both as setting the profile name.
-    // The data is persisted in localStorage by the AppContext.
-    setUser({
-      id: crypto.randomUUID(),
-      name: name.trim(),
-      email: `${name.trim().toLowerCase().replace(/\s/g, '.')}@exemplo.com`,
-      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`
-    });
-    
-    navigate('/home');
+    const result = type === 'login' 
+      ? login(name.trim(), password.trim()) 
+      : register(name.trim(), password.trim());
+
+    if (result.success) {
+      navigate('/home');
+    } else {
+      setError(result.message);
+    }
   };
 
   return (
@@ -48,30 +52,49 @@ const WelcomeScreen: React.FC = () => {
             </h1>
           </div>
           <p className="max-w-[280px] text-lg font-medium text-white/90 drop-shadow-md leading-snug">
-            Sua lista de compras inteligente e colaborativa
+            Economize tempo e dinheiro em cada compra
           </p>
         </div>
 
         <div className="w-full space-y-6">
           <div className="rounded-3xl bg-white/10 p-6 backdrop-blur-2xl border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
             <div className="space-y-4">
-              <div className="relative">
-                <input 
-                  type="text" 
-                  value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    if (error) setError('');
-                  }}
-                  placeholder="Como podemos te chamar?" 
-                  className="w-full h-14 bg-white/10 border border-white/20 rounded-xl px-4 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-primary/50 text-lg transition-all"
-                />
-                {error && <p className="text-primary text-xs font-bold mt-1 ml-2">{error}</p>}
+              <div className="space-y-3">
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    value={name}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (error) setError('');
+                    }}
+                    placeholder="Usuário" 
+                    className="w-full h-14 bg-white/10 border border-white/20 rounded-xl px-4 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-primary/50 text-lg transition-all"
+                  />
+                </div>
+                <div className="relative">
+                  <input 
+                    type="password" 
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (error) setError('');
+                    }}
+                    placeholder="Senha" 
+                    className="w-full h-14 bg-white/10 border border-white/20 rounded-xl px-4 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-primary/50 text-lg transition-all"
+                  />
+                </div>
+                {error && (
+                  <div className="bg-danger/20 border border-danger/40 rounded-lg p-3 flex items-center gap-2 animate-fade-in">
+                    <span className="material-symbols-outlined text-danger text-sm">error</span>
+                    <p className="text-white text-xs font-bold">{error}</p>
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-col gap-3 pt-2">
                 <button 
-                  onClick={() => handleAuth('login')} 
+                  onClick={() => handleAction('login')} 
                   className="group relative flex w-full items-center justify-center overflow-hidden rounded-xl bg-primary h-14 text-background-dark shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <span className="z-10 text-base font-bold tracking-wide">Entrar</span>
@@ -79,10 +102,10 @@ const WelcomeScreen: React.FC = () => {
                 </button>
                 
                 <button 
-                  onClick={() => handleAuth('register')} 
+                  onClick={() => handleAction('register')} 
                   className="flex w-full items-center justify-center rounded-xl border border-white/30 bg-black/20 h-14 text-white backdrop-blur-sm transition-colors hover:bg-black/40 active:bg-black/50"
                 >
-                  <span className="text-base font-bold tracking-wide">Cadastrar</span>
+                  <span className="text-base font-bold tracking-wide">Cadastrar Novo</span>
                   <span className="material-symbols-outlined ml-2 text-[20px]">person_add</span>
                 </button>
               </div>
@@ -90,7 +113,7 @@ const WelcomeScreen: React.FC = () => {
           </div>
           
           <p className="text-center text-[11px] text-white/50 px-8 pb-2">
-            Ao entrar, você aceita nossos <a className="underline hover:text-white" href="#">Termos de Uso</a> e <a className="underline hover:text-white" href="#">Privacidade</a>.
+            Desenvolvido para ajudar no seu planejamento doméstico.
           </p>
         </div>
       </div>

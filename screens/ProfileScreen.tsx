@@ -5,10 +5,10 @@ import { useApp } from '../context/AppContext';
 
 const ProfileScreen: React.FC = () => {
   const navigate = useNavigate();
-  const { user, setUser } = useApp();
+  const { user, logout } = useApp();
 
   const handleLogout = () => {
-    setUser(null);
+    logout();
     navigate('/');
   };
 
