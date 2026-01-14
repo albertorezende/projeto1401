@@ -1,0 +1,7 @@
+{
+  "name": "Partiu Mercado",
+  "description": "A collaborative shopping list application designed for organization and savings. Manage multiple lists, track history, and import items effortlessly.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
