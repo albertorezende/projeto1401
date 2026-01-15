@@ -33,12 +33,14 @@ export interface ShoppingList {
 export interface UserData {
   lists: ShoppingList[];
   activeListId: string | null;
+  fliers?: Record<string, string>; // Store market flier URLs (Market Name -> PDF URL)
 }
 
 export interface AppState {
   user: UserProfile | null;
   lists: ShoppingList[];
   activeListId: string | null;
+  fliers: Record<string, string>;
 }
 
 // The full structure of our local "Database"
