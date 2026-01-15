@@ -8,6 +8,8 @@ interface AppContextType extends AppState {
   logout: () => void;
   createList: (name: string) => string;
   addItem: (listId: string, item: Omit<ShoppingItem, 'id' | 'completed'>) => void;
+  updateItem: (listId: string, itemId: string, updates: Partial<ShoppingItem>) => void;
+  deleteItem: (listId: string, itemId: string) => void;
   toggleItem: (listId: string, itemId: string) => void;
   deleteList: (listId: string) => void;
   setActiveList: (listId: string) => void;
@@ -155,6 +157,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
+  const updateItem = (listId: string, itemId: string, updates: Partial<ShoppingItem>) => {
+    setUserLists(prev => prev.map(list => {
+      if (list.id === listId) {
+        const updatedItems = list.items.map(item => 
+          item.id === itemId ? { ...item, ...updates } : item
+        );
+        return {
+          ...list,
+          items: updatedItems,
+          totalEstimated: updatedItems.reduce((acc, i) => acc + (i.price || 0) * i.quantity, 0)
+        };
+      }
+      return list;
+    }));
+  };
+
+  const deleteItem = (listId: string, itemId: string) => {
+    setUserLists(prev => prev.map(list => {
+      if (list.id === listId) {
+        const updatedItems = list.items.filter(item => item.id !== itemId);
+        return {
+          ...list,
+          items: updatedItems,
+          totalEstimated: updatedItems.reduce((acc, i) => acc + (i.price || 0) * i.quantity, 0)
+        };
+      }
+      return list;
+    }));
+  };
+
   const toggleItem = (listId: string, itemId: string) => {
     setUserLists(prev => prev.map(list => {
       if (list.id === listId) {
@@ -185,7 +217,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       register, 
       logout,
       createList, 
-      addItem, 
+      addItem,
+      updateItem,
+      deleteItem,
       toggleItem, 
       deleteList, 
       setActiveList 
