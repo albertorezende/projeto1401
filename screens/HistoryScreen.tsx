@@ -9,24 +9,26 @@ const HistoryScreen: React.FC = () => {
   const { lists, createList, addItem, setActiveList } = useApp();
   const [expandedListId, setExpandedListId] = useState<string | null>(null);
   
-  const handleReuseList = (list: ShoppingList) => {
-    // 1. Criar uma nova lista baseada na histórica
-    const newId = createList(list.name + " (Cópia)");
+  const handleReuseList = async (list: ShoppingList) => {
+    // 1. Criar uma nova lista baseada na histórica (aguarda a criação no DB)
+    const newId = await createList(list.name + " (Cópia)");
     
-    // 2. Adicionar todos os itens da lista histórica como "não concluídos"
-    list.items.forEach(item => {
-      addItem(newId, {
-        name: item.name,
-        quantity: item.quantity,
-        unit: item.unit,
-        category: item.category,
-        price: item.price
-      });
-    });
+    if (newId) {
+      // 2. Adicionar todos os itens da lista histórica como "não concluídos"
+      for (const item of list.items) {
+        await addItem(newId, {
+          name: item.name,
+          quantity: item.quantity,
+          unit: item.unit,
+          category: item.category,
+          price: item.price
+        });
+      }
 
-    // 3. Definir como ativa e navegar para a tela de lista
-    setActiveList(newId);
-    navigate('/list');
+      // 3. Definir como ativa e navegar
+      setActiveList(newId);
+      navigate('/list');
+    }
   };
 
   const toggleDetails = (id: string) => {
@@ -70,7 +72,6 @@ const HistoryScreen: React.FC = () => {
                 key={list.id}
                 className={`bg-white dark:bg-surface-dark rounded-3xl shadow-sm border transition-all duration-300 ${isExpanded ? 'ring-2 ring-primary/20 border-primary/30' : 'border-slate-100 dark:border-white/5'}`}
               >
-                {/* CARD PRINCIPAL */}
                 <div className="p-5">
                   <div className="flex items-center gap-4 mb-4">
                     <div className="flex flex-col items-center justify-center h-14 w-14 rounded-2xl bg-slate-50 dark:bg-black/20 border border-slate-100 dark:border-white/10 shrink-0">
@@ -111,10 +112,8 @@ const HistoryScreen: React.FC = () => {
                   </div>
                 </div>
 
-                {/* DETALHES EXPANDIDOS */}
                 {isExpanded && (
                   <div className="px-5 pb-6 pt-2 space-y-6 animate-fade-in border-t border-slate-50 dark:border-white/5">
-                    {/* NÃO COMPRADOS */}
                     {pendingItems.length > 0 && (
                       <div>
                         <h4 className="text-[10px] font-black text-danger uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
@@ -132,7 +131,6 @@ const HistoryScreen: React.FC = () => {
                       </div>
                     )}
 
-                    {/* COMPRADOS */}
                     {purchasedItems.length > 0 && (
                       <div>
                         <h4 className="text-[10px] font-black text-green-500 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
@@ -151,10 +149,6 @@ const HistoryScreen: React.FC = () => {
                           ))}
                         </div>
                       </div>
-                    )}
-
-                    {list.items.length === 0 && (
-                      <p className="text-center text-xs text-slate-400 font-bold italic py-4">Lista vazia.</p>
                     )}
                   </div>
                 )}

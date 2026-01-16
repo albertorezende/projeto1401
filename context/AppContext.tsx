@@ -1,13 +1,11 @@
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { AppState, ShoppingList, ShoppingItem, UserProfile } from '../types';
 
 /**
  * CONFIGURAÇÃO DO BACKEND (SUPABASE)
- * 1. Vá em Settings > API no seu painel do Supabase.
- * 2. Copie a "Project URL" e cole entre as aspas de SUPABASE_URL.
- * 3. Copie a "anon public" key e cole entre as aspas de SUPABASE_ANON_KEY.
+ * Substitua as chaves abaixo pelas do seu projeto no Supabase Cloud.
  */
 const SUPABASE_URL = 'https://nqhewhthzeoolqqnpwic.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5xaGV3aHRoemVvb2xxcW5wd2ljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg1NzUwMTksImV4cCI6MjA4NDE1MTAxOX0.jHk4jAKBRQFOgRHzV7d1eKbJzEUU4yCgH1AIapTP02Y';
@@ -24,7 +22,7 @@ interface AppContextType extends AppState {
   deleteItem: (listId: string, itemId: string) => Promise<void>;
   toggleItem: (listId: string, itemId: string) => Promise<void>;
   deleteList: (listId: string) => Promise<void>;
-  setActiveList: (listId: string) => void;
+  setActiveList: (listId: string | null) => void;
   isLoading: boolean;
 }
 
@@ -37,13 +35,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [fliers, setFliers] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
 
-  // Carregar dados iniciais (Sessão e Encartes)
   useEffect(() => {
     const initApp = async () => {
       try {
         setIsLoading(true);
-        
-        // Verifica se já existe um usuário logado no navegador
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
@@ -56,10 +51,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           await fetchUserLists(session.user.id);
         }
 
-        // Busca os encartes que você cadastrou na tabela 'fliers' do Supabase
         const { data: flierData } = await supabase.from('fliers').select('market_name, url');
         if (flierData) {
-          const flierMap = flierData.reduce((acc, curr) => ({ ...acc, [curr.market_name]: curr.url }), {});
+          const flierMap = flierData.reduce((acc: Record<string, string>, curr: any) => ({ ...acc, [curr.market_name]: curr.url }), {});
           setFliers(flierMap);
         }
       } catch (error) {
@@ -71,8 +65,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     initApp();
 
-    // Fica ouvindo se o usuário deslogar ou logar em outra aba
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event: any, session: any) => {
       if (session) {
         setUser({
           id: session.user.id,
@@ -99,7 +92,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .order('created_at', { ascending: false });
 
     if (!error && data) {
-      const formattedLists: ShoppingList[] = data.map(l => ({
+      const formattedLists: ShoppingList[] = data.map((l: any) => ({
         id: l.id,
         name: l.name,
         date: l.created_at,
@@ -131,7 +124,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
     if (error) return { success: false, message: error.message };
-    return { success: true, message: 'Cadastro realizado! Verifique seu e-mail para confirmar.' };
+    return { success: true, message: 'Cadastro realizado! Verifique seu e-mail.' };
   };
 
   const logout = async () => {
@@ -150,7 +143,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newList: ShoppingList = { id: data.id, name: data.name, date: data.created_at, items: [], status: 'active', totalEstimated: 0 };
     setLists(prev => [newList, ...prev]);
     setActiveListId(data.id);
-    return data.id;
+    return data.id as string;
   };
 
   const addItem = async (listId: string, item: Omit<ShoppingItem, 'id' | 'completed'>) => {
@@ -166,7 +159,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ? { 
               ...l, 
               items: [...l.items, data], 
-              totalEstimated: l.totalEstimated + (data.price * data.quantity) 
+              totalEstimated: l.totalEstimated + ((data.price || 0) * data.quantity) 
             } 
           : l
       ));
