@@ -38,10 +38,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const fetchFliers = async () => {
     try {
       const { data, error } = await supabase.from('fliers').select('market_name, url');
-      if (error) {
-        console.error("ERRO AO BUSCAR ENCARTES: Provável falta de Policy no Supabase.", error.message);
-        return;
-      }
+      if (error) return;
       if (data) {
         const flierMap = data.reduce((acc: Record<string, string>, curr: any) => {
           if (curr.market_name && curr.url) {
@@ -52,7 +49,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setFliers(flierMap);
       }
     } catch (e) {
-      console.error("Erro inesperado fliers:", e);
+      console.error("Erro encartes:", e);
     }
   };
 
@@ -64,10 +61,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error("ERRO AO BUSCAR LISTAS:", error.message);
-        return;
-      }
+      if (error) return;
 
       if (data) {
         const formattedLists: ShoppingList[] = data.map((l: any) => ({
@@ -87,41 +81,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   useEffect(() => {
-    const initApp = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          setUser({
-            id: session.user.id,
-            name: session.user.user_metadata.full_name || 'Usuário',
-            email: session.user.email || '',
-            avatarUrl: session.user.user_metadata.avatar_url
-          });
-          await fetchUserLists(session.user.id);
-        }
-        await fetchFliers();
-      } finally {
-        setIsLoading(false);
-      }
+    // 1. Verificar sessão inicial
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      handleAuthEvent(session);
+      await fetchFliers();
+      setIsLoading(false);
     };
-    initApp();
+
+    // 2. Ouvir mudanças de auth (Login/Logout)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleAuthEvent(session);
+    });
+
+    checkSession();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const createList = async (name: string) => {
-    if (!user) {
-        console.error("Erro: Usuário não logado para criar lista.");
-        return null;
+  const handleAuthEvent = (session: any) => {
+    if (session?.user) {
+      setUser({
+        id: session.user.id,
+        name: session.user.user_metadata.full_name || 'Usuário',
+        email: session.user.email || '',
+        avatarUrl: session.user.user_metadata.avatar_url
+      });
+      fetchUserLists(session.user.id);
+    } else {
+      setUser(null);
+      setLists([]);
+      setActiveListId(null);
     }
+  };
+
+  const createList = async (name: string) => {
+    if (!user) return null;
     const { data, error } = await supabase
       .from('shopping_lists')
       .insert([{ name, user_id: user.id }])
       .select()
       .single();
 
-    if (error) {
-      console.error("ERRO AO CRIAR LISTA: Verifique a Policy da tabela 'shopping_lists' no Supabase.", error.message);
-      return null;
-    }
+    if (error) return null;
     const newList: ShoppingList = { id: data.id, name: data.name, date: data.created_at, items: [], status: 'active', totalEstimated: 0 };
     setLists(prev => [newList, ...prev]);
     return data.id as string;
@@ -134,11 +138,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .select()
       .single();
 
-    if (error) {
-      console.error("ERRO AO ADICIONAR ITEM: Verifique a Policy da tabela 'shopping_items' no Supabase.", error.message);
-      return;
-    }
-
+    if (error) return;
     if (data) {
       setLists(prev => prev.map(l => 
         l.id === listId 
@@ -148,7 +148,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Funções simplificadas para brevidade, mantendo a lógica original
   const updateItem = async (listId: string, itemId: string, updates: Partial<ShoppingItem>) => {
     await supabase.from('shopping_items').update(updates).eq('id', itemId);
     setLists(prev => prev.map(l => l.id === listId ? { ...l, items: l.items.map(i => i.id === itemId ? { ...i, ...updates } : i) } : l));
@@ -181,7 +180,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const { error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
         return { success: !error, message: error?.message || 'Sucesso' };
       },
-      logout: async () => { await supabase.auth.signOut(); },
+      logout: async () => { 
+        await supabase.auth.signOut(); 
+      },
       createList, addItem, updateItem, deleteItem, toggleItem, deleteList, 
       setActiveList: setActiveListId,
       refreshFliers: fetchFliers

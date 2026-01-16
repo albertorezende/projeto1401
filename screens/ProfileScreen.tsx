@@ -1,15 +1,13 @@
 
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 
 const ProfileScreen: React.FC = () => {
-  const navigate = useNavigate();
   const { user, logout } = useApp();
 
-  const handleLogout = () => {
-    logout();
-    navigate('/');
+  const handleLogout = async () => {
+    await logout();
+    // O redirecionamento será automático pelo guard em App.tsx quando o user for setado como null
   };
 
   return (
@@ -23,7 +21,7 @@ const ProfileScreen: React.FC = () => {
           <div className="relative group">
             <div 
               className="w-24 h-24 rounded-full bg-gray-200 dark:bg-gray-700 bg-center bg-cover border-4 border-primary/20" 
-              style={{ backgroundImage: `url(${user?.avatarUrl})` }}
+              style={{ backgroundImage: `url(${user?.avatarUrl || 'https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y'})` }}
             ></div>
             <button className="absolute bottom-0 right-0 bg-primary text-background-dark rounded-full p-2 shadow-md">
               <span className="material-symbols-outlined text-[18px]">edit</span>

@@ -8,7 +8,9 @@ const MARKETS = [
   { name: 'Supermarket', color: 'bg-red-600' },
   { name: 'Mundial', color: 'bg-blue-600' },
   { name: 'Assai', color: 'bg-orange-600' },
-  { name: 'Carrefour', color: 'bg-blue-800' },
+  { name: 'Prezunic', color: 'bg-blue-500' },
+  { name: 'Rede Economia', color: 'bg-red-700' },
+  { name: 'Atacadão', color: 'bg-blue-900' },
   { name: 'Pão de Açúcar', color: 'bg-green-700' }
 ];
 
@@ -31,7 +33,9 @@ const EncartesScreen: React.FC = () => {
   };
 
   const getFlierUrl = (marketName: string) => {
-    return fliers[marketName.toLowerCase()];
+    // Normaliza para comparação (remove acentos e espaços extras se necessário no futuro)
+    const normalizedSearch = marketName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return fliers[normalizedSearch] || fliers[marketName.toLowerCase()];
   };
 
   const getEmbedUrl = (url: string) => {

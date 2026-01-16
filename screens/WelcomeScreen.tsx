@@ -28,8 +28,11 @@ const WelcomeScreen: React.FC = () => {
         : await login(email.trim(), password.trim());
 
       if (result.success) {
-        if (!isRegistering) navigate('/home');
-        else alert('Conta criada! Verifique seu e-mail.');
+        if (isRegistering) {
+          alert('Conta criada! Verifique seu e-mail para confirmar o cadastro e depois faça login.');
+          setIsRegistering(false);
+        }
+        // Se for login, o App.tsx redirecionará automaticamente via useEffect de Auth do Context
       } else {
         setError(result.message);
       }
