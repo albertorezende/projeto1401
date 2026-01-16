@@ -21,7 +21,6 @@ interface AppContextType extends AppState {
   deleteItem: (listId: string, itemId: string) => Promise<void>;
   toggleItem: (listId: string, itemId: string) => Promise<void>;
   deleteList: (listId: string) => Promise<void>;
-  uploadFlier: (marketName: string, file: File) => Promise<{ success: boolean; message: string }>;
   setActiveList: (listId: string | null) => void;
   isLoading: boolean;
 }
@@ -36,17 +35,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchFliers = async () => {
-    const { data: flierData } = await supabase.from('fliers').select('market_name, url');
-    if (flierData) {
-      const flierMap = flierData.reduce((acc: Record<string, string>, curr: any) => ({ ...acc, [curr.market_name]: curr.url }), {});
-      setFliers(flierMap);
+    try {
+      const { data: flierData, error } = await supabase.from('fliers').select('market_name, url');
+      if (!error && flierData) {
+        const flierMap = flierData.reduce((acc: Record<string, string>, curr: any) => ({ 
+          ...acc, 
+          [curr.market_name]: curr.url 
+        }), {});
+        setFliers(flierMap);
+      }
+    } catch (e) {
+      console.warn("Tabela 'fliers' ainda não existe ou está inacessível.");
+    }
+  };
+
+  const fetchUserLists = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('shopping_lists')
+        .select('*, items:shopping_items(*)')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        const formattedLists: ShoppingList[] = data.map((l: any) => ({
+          id: l.id,
+          name: l.name,
+          date: l.created_at,
+          status: l.status,
+          totalEstimated: l.items.reduce((acc: number, i: any) => acc + (i.price || 0) * i.quantity, 0),
+          items: l.items
+        }));
+        setLists(formattedLists);
+        if (formattedLists.length > 0 && !activeListId) setActiveListId(formattedLists[0].id);
+      }
+    } catch (e) {
+      console.warn("Erro ao buscar listas ou tabelas inexistentes.");
     }
   };
 
   useEffect(() => {
+    // TIMEOUT DE SEGURANÇA: Se o Supabase demorar demais, libera o app após 6 segundos
+    const safetyTimeout = setTimeout(() => {
+      if (isLoading) {
+        console.warn("Conexão demorada com Supabase. Liberando interface via timeout.");
+        setIsLoading(false);
+      }
+    }, 6000);
+
     const initApp = async () => {
       try {
-        setIsLoading(true);
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
@@ -60,9 +98,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         await fetchFliers();
       } catch (error) {
-        console.error("Erro ao inicializar app:", error);
+        console.error("Erro na inicialização:", error);
       } finally {
         setIsLoading(false);
+        clearTimeout(safetyTimeout);
       }
     };
 
@@ -84,29 +123,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(safetyTimeout);
+    };
   }, []);
-
-  const fetchUserLists = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('shopping_lists')
-      .select('*, items:shopping_items(*)')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      const formattedLists: ShoppingList[] = data.map((l: any) => ({
-        id: l.id,
-        name: l.name,
-        date: l.created_at,
-        status: l.status,
-        totalEstimated: l.items.reduce((acc: number, i: any) => acc + (i.price || 0) * i.quantity, 0),
-        items: l.items
-      }));
-      setLists(formattedLists);
-      if (formattedLists.length > 0 && !activeListId) setActiveListId(formattedLists[0].id);
-    }
-  };
 
   const login = async (email: string, pass: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
@@ -212,31 +233,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const uploadFlier = async (marketName: string, file: File) => {
-    const fileName = `${marketName.toLowerCase()}_${Date.now()}.pdf`;
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('fliers') // Você precisa criar este bucket no Supabase Storage como PUBLIC
-      .upload(fileName, file);
-
-    if (uploadError) return { success: false, message: uploadError.message };
-
-    const { data: { publicUrl } } = supabase.storage.from('fliers').getPublicUrl(fileName);
-
-    // Atualiza ou Insere na tabela fliers
-    const { error: dbError } = await supabase
-      .from('fliers')
-      .upsert({ market_name: marketName, url: publicUrl }, { onConflict: 'market_name' });
-
-    if (dbError) return { success: false, message: dbError.message };
-    
-    await fetchFliers();
-    return { success: true, message: 'Upload concluído!' };
-  };
-
   return (
     <AppContext.Provider value={{ 
       user, lists, activeListId, fliers, isLoading,
-      login, register, logout, createList, addItem, updateItem, deleteItem, toggleItem, deleteList, uploadFlier, setActiveList: setActiveListId
+      login, register, logout, createList, addItem, updateItem, deleteItem, toggleItem, deleteList, setActiveList: setActiveListId
     }}>
       {children}
     </AppContext.Provider>
