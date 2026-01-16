@@ -5,7 +5,6 @@ import { AppState, ShoppingList, ShoppingItem, UserProfile } from '../types';
 
 /**
  * CONFIGURAÇÃO DO BACKEND (SUPABASE)
- * Substitua as chaves abaixo pelas do seu projeto no Supabase Cloud.
  */
 const SUPABASE_URL = 'https://nqhewhthzeoolqqnpwic.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5xaGV3aHRoemVvb2xxcW5wd2ljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg1NzUwMTksImV4cCI6MjA4NDE1MTAxOX0.jHk4jAKBRQFOgRHzV7d1eKbJzEUU4yCgH1AIapTP02Y';
@@ -22,6 +21,7 @@ interface AppContextType extends AppState {
   deleteItem: (listId: string, itemId: string) => Promise<void>;
   toggleItem: (listId: string, itemId: string) => Promise<void>;
   deleteList: (listId: string) => Promise<void>;
+  uploadFlier: (marketName: string, file: File) => Promise<{ success: boolean; message: string }>;
   setActiveList: (listId: string | null) => void;
   isLoading: boolean;
 }
@@ -34,6 +34,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeListId, setActiveListId] = useState<string | null>(null);
   const [fliers, setFliers] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
+
+  const fetchFliers = async () => {
+    const { data: flierData } = await supabase.from('fliers').select('market_name, url');
+    if (flierData) {
+      const flierMap = flierData.reduce((acc: Record<string, string>, curr: any) => ({ ...acc, [curr.market_name]: curr.url }), {});
+      setFliers(flierMap);
+    }
+  };
 
   useEffect(() => {
     const initApp = async () => {
@@ -50,12 +58,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
           await fetchUserLists(session.user.id);
         }
-
-        const { data: flierData } = await supabase.from('fliers').select('market_name, url');
-        if (flierData) {
-          const flierMap = flierData.reduce((acc: Record<string, string>, curr: any) => ({ ...acc, [curr.market_name]: curr.url }), {});
-          setFliers(flierMap);
-        }
+        await fetchFliers();
       } catch (error) {
         console.error("Erro ao inicializar app:", error);
       } finally {
@@ -209,10 +212,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const uploadFlier = async (marketName: string, file: File) => {
+    const fileName = `${marketName.toLowerCase()}_${Date.now()}.pdf`;
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('fliers') // Você precisa criar este bucket no Supabase Storage como PUBLIC
+      .upload(fileName, file);
+
+    if (uploadError) return { success: false, message: uploadError.message };
+
+    const { data: { publicUrl } } = supabase.storage.from('fliers').getPublicUrl(fileName);
+
+    // Atualiza ou Insere na tabela fliers
+    const { error: dbError } = await supabase
+      .from('fliers')
+      .upsert({ market_name: marketName, url: publicUrl }, { onConflict: 'market_name' });
+
+    if (dbError) return { success: false, message: dbError.message };
+    
+    await fetchFliers();
+    return { success: true, message: 'Upload concluído!' };
+  };
+
   return (
     <AppContext.Provider value={{ 
       user, lists, activeListId, fliers, isLoading,
-      login, register, logout, createList, addItem, updateItem, deleteItem, toggleItem, deleteList, setActiveList: setActiveListId
+      login, register, logout, createList, addItem, updateItem, deleteItem, toggleItem, deleteList, uploadFlier, setActiveList: setActiveListId
     }}>
       {children}
     </AppContext.Provider>
