@@ -1,175 +1,225 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { AppState, ShoppingList, ShoppingItem, UserProfile, MockDatabase, UserAccount, UserData } from '../types';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { AppState, ShoppingList, ShoppingItem, UserProfile } from '../types';
+
+/**
+ * CONFIGURAÇÃO DO BACKEND (SUPABASE)
+ * 1. Vá em Settings > API no seu painel do Supabase.
+ * 2. Copie a "Project URL" e cole entre as aspas de SUPABASE_URL.
+ * 3. Copie a "anon public" key e cole entre as aspas de SUPABASE_ANON_KEY.
+ */
+const SUPABASE_URL = 'https://nqhewhthzeoolqqnpwic.supabase.co'; 
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5xaGV3aHRoemVvb2xxcW5wd2ljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg1NzUwMTksImV4cCI6MjA4NDE1MTAxOX0.jHk4jAKBRQFOgRHzV7d1eKbJzEUU4yCgH1AIapTP02Y';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 interface AppContextType extends AppState {
-  login: (name: string, password: string) => { success: boolean; message: string };
-  register: (name: string, password: string) => { success: boolean; message: string };
-  logout: () => void;
-  createList: (name: string) => string;
-  addItem: (listId: string, item: Omit<ShoppingItem, 'id' | 'completed'>) => void;
-  updateItem: (listId: string, itemId: string, updates: Partial<ShoppingItem>) => void;
-  deleteItem: (listId: string, itemId: string) => void;
-  toggleItem: (listId: string, itemId: string) => void;
-  deleteList: (listId: string) => void;
+  login: (email: string, pass: string) => Promise<{ success: boolean; message: string }>;
+  register: (email: string, pass: string, name: string) => Promise<{ success: boolean; message: string }>;
+  logout: () => Promise<void>;
+  createList: (name: string) => Promise<string | null>;
+  addItem: (listId: string, item: Omit<ShoppingItem, 'id' | 'completed'>) => Promise<void>;
+  updateItem: (listId: string, itemId: string, updates: Partial<ShoppingItem>) => Promise<void>;
+  deleteItem: (listId: string, itemId: string) => Promise<void>;
+  toggleItem: (listId: string, itemId: string) => Promise<void>;
+  deleteList: (listId: string) => Promise<void>;
   setActiveList: (listId: string) => void;
+  isLoading: boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const DB_KEY = 'partiu_mercado_db_v2';
-const SESSION_KEY = 'partiu_mercado_session';
-
-// Links permanentes e fixos da estrutura do App
-const DEFAULT_FLIERS = {
-  'Guanabara': 'https://drive.google.com/file/d/1PA656QzkpWnp-ZjWxO2lTLkvcBn07r5B/view?usp=drive_link',
-  'Supermarket': 'https://drive.google.com/file/d/1FS7B0srC3doVbcbBux0Cgx5nhV1bnqz5/view?usp=drive_link',
-  'Mundial': 'https://drive.google.com/file/d/1vJsLY5vyTgysaZrb6lYnG21CRbEA_L84/view?usp=drive_link',
-  'Assaí': 'https://drive.google.com/file/d/1ugeajFBQBtwRRYf3lop7lPMcSKo2OldJ/view?usp=drive_link'
-};
-
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [db, setDb] = useState<MockDatabase>(() => {
-    const saved = localStorage.getItem(DB_KEY);
-    return saved ? JSON.parse(saved) : { accounts: [], contentStore: {} };
-  });
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [lists, setLists] = useState<ShoppingList[]>([]);
+  const [activeListId, setActiveListId] = useState<string | null>(null);
+  const [fliers, setFliers] = useState<Record<string, string>>({});
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
-    const session = localStorage.getItem(SESSION_KEY);
-    return session ? JSON.parse(session) : null;
-  });
-
-  const [userLists, setUserLists] = useState<ShoppingList[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  
-  // Encartes agora são estáticos baseados na configuração do app
-  const [fliers] = useState<Record<string, string>>(DEFAULT_FLIERS);
-
+  // Carregar dados iniciais (Sessão e Encartes)
   useEffect(() => {
-    localStorage.setItem(DB_KEY, JSON.stringify(db));
-  }, [db]);
-
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
-      const userData = db.contentStore[currentUser.id];
-      if (userData) {
-        setUserLists(userData.lists || []);
-        setActiveId(userData.activeListId || null);
-      }
-    } else {
-      localStorage.removeItem(SESSION_KEY);
-      setUserLists([]);
-      setActiveId(null);
-    }
-  }, [currentUser, db.contentStore]);
-
-  const syncToDb = useCallback(() => {
-    if (!currentUser) return;
-    setDb(prev => ({
-      ...prev,
-      contentStore: {
-        ...prev.contentStore,
-        [currentUser.id]: {
-          lists: userLists,
-          activeListId: activeId,
-          fliers: fliers 
+    const initApp = async () => {
+      try {
+        setIsLoading(true);
+        
+        // Verifica se já existe um usuário logado no navegador
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          setUser({
+            id: session.user.id,
+            name: session.user.user_metadata.full_name || 'Usuário',
+            email: session.user.email || '',
+            avatarUrl: session.user.user_metadata.avatar_url
+          });
+          await fetchUserLists(session.user.id);
         }
+
+        // Busca os encartes que você cadastrou na tabela 'fliers' do Supabase
+        const { data: flierData } = await supabase.from('fliers').select('market_name, url');
+        if (flierData) {
+          const flierMap = flierData.reduce((acc, curr) => ({ ...acc, [curr.market_name]: curr.url }), {});
+          setFliers(flierMap);
+        }
+      } catch (error) {
+        console.error("Erro ao inicializar app:", error);
+      } finally {
+        setIsLoading(false);
       }
-    }));
-  }, [currentUser, userLists, activeId, fliers]);
+    };
 
-  useEffect(() => {
-    const timer = setTimeout(syncToDb, 500);
-    return () => clearTimeout(timer);
-  }, [userLists, activeId, syncToDb]);
+    initApp();
 
-  const login = (name: string, password: string) => {
-    const account = db.accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
-    if (!account) return { success: false, message: 'Usuário não encontrado' };
-    if (account.password !== password) return { success: false, message: 'Senha incorreta' };
-    setCurrentUser({ id: account.id, name: account.name, email: account.email, avatarUrl: account.avatarUrl });
+    // Fica ouvindo se o usuário deslogar ou logar em outra aba
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session) {
+        setUser({
+          id: session.user.id,
+          name: session.user.user_metadata.full_name || 'Usuário',
+          email: session.user.email || '',
+          avatarUrl: session.user.user_metadata.avatar_url
+        });
+        await fetchUserLists(session.user.id);
+      } else {
+        setUser(null);
+        setLists([]);
+        setActiveListId(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const fetchUserLists = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('shopping_lists')
+      .select('*, items:shopping_items(*)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      const formattedLists: ShoppingList[] = data.map(l => ({
+        id: l.id,
+        name: l.name,
+        date: l.created_at,
+        status: l.status,
+        totalEstimated: l.items.reduce((acc: number, i: any) => acc + (i.price || 0) * i.quantity, 0),
+        items: l.items
+      }));
+      setLists(formattedLists);
+      if (formattedLists.length > 0 && !activeListId) setActiveListId(formattedLists[0].id);
+    }
+  };
+
+  const login = async (email: string, pass: string) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    if (error) return { success: false, message: error.message };
+    if (data.user) await fetchUserLists(data.user.id);
     return { success: true, message: 'Sucesso' };
   };
 
-  const register = (name: string, password: string) => {
-    const exists = db.accounts.some(a => a.name.toLowerCase() === name.toLowerCase());
-    if (exists) return { success: false, message: 'Este nome de usuário já existe' };
-    const newId = crypto.randomUUID();
-    const newAccount: UserAccount = {
-      id: newId, name, password,
-      email: `${name.toLowerCase().replace(/\s/g, '.')}@partiumercado.com`,
-      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`
-    };
-    setDb(prev => ({
-      ...prev,
-      accounts: [...prev.accounts, newAccount],
-      contentStore: { ...prev.contentStore, [newId]: { lists: [], activeListId: null, fliers: {} } }
-    }));
-    setCurrentUser({ id: newAccount.id, name: newAccount.name, email: newAccount.email, avatarUrl: newAccount.avatarUrl });
-    return { success: true, message: 'Conta criada com sucesso' };
-  };
-
-  const logout = () => setCurrentUser(null);
-
-  const createList = (name: string) => {
-    const newList: ShoppingList = { id: crypto.randomUUID(), name, date: new Date().toISOString(), items: [], status: 'active', totalEstimated: 0 };
-    setUserLists(prev => [newList, ...prev]);
-    setActiveId(newList.id);
-    return newList.id;
-  };
-
-  const addItem = (listId: string, item: Omit<ShoppingItem, 'id' | 'completed'>) => {
-    setUserLists(prev => prev.map(list => {
-      if (list.id === listId) {
-        const newItem: ShoppingItem = { ...item, id: crypto.randomUUID(), completed: false };
-        const updatedItems = [...list.items, newItem];
-        return { ...list, items: updatedItems, totalEstimated: updatedItems.reduce((acc, i) => acc + (i.price || 0) * i.quantity, 0) };
+  const register = async (email: string, pass: string, name: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password: pass,
+      options: { 
+        data: { 
+          full_name: name, 
+          avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}` 
+        } 
       }
-      return list;
-    }));
+    });
+    if (error) return { success: false, message: error.message };
+    return { success: true, message: 'Cadastro realizado! Verifique seu e-mail para confirmar.' };
   };
 
-  const updateItem = (listId: string, itemId: string, updates: Partial<ShoppingItem>) => {
-    setUserLists(prev => prev.map(list => {
-      if (list.id === listId) {
-        const updatedItems = list.items.map(item => item.id === itemId ? { ...item, ...updates } : item);
-        return { ...list, items: updatedItems, totalEstimated: updatedItems.reduce((acc, i) => acc + (i.price || 0) * i.quantity, 0) };
-      }
-      return list;
-    }));
+  const logout = async () => {
+    await supabase.auth.signOut();
   };
 
-  const deleteItem = (listId: string, itemId: string) => {
-    setUserLists(prev => prev.map(list => {
-      if (list.id === listId) {
-        const updatedItems = list.items.filter(item => item.id !== itemId);
-        return { ...list, items: updatedItems, totalEstimated: updatedItems.reduce((acc, i) => acc + (i.price || 0) * i.quantity, 0) };
-      }
-      return list;
-    }));
+  const createList = async (name: string) => {
+    if (!user) return null;
+    const { data, error } = await supabase
+      .from('shopping_lists')
+      .insert([{ name, user_id: user.id }])
+      .select()
+      .single();
+
+    if (error) return null;
+    const newList: ShoppingList = { id: data.id, name: data.name, date: data.created_at, items: [], status: 'active', totalEstimated: 0 };
+    setLists(prev => [newList, ...prev]);
+    setActiveListId(data.id);
+    return data.id;
   };
 
-  const toggleItem = (listId: string, itemId: string) => {
-    setUserLists(prev => prev.map(list => {
-      if (list.id === listId) {
-        return { ...list, items: list.items.map(item => item.id === itemId ? { ...item, completed: !item.completed } : item) };
-      }
-      return list;
-    }));
+  const addItem = async (listId: string, item: Omit<ShoppingItem, 'id' | 'completed'>) => {
+    const { data, error } = await supabase
+      .from('shopping_items')
+      .insert([{ ...item, list_id: listId, completed: false }])
+      .select()
+      .single();
+
+    if (!error && data) {
+      setLists(prev => prev.map(l => 
+        l.id === listId 
+          ? { 
+              ...l, 
+              items: [...l.items, data], 
+              totalEstimated: l.totalEstimated + (data.price * data.quantity) 
+            } 
+          : l
+      ));
+    }
   };
 
-  const deleteList = (listId: string) => {
-    setUserLists(prev => prev.filter(l => l.id !== listId));
-    if (activeId === listId) setActiveId(null);
+  const updateItem = async (listId: string, itemId: string, updates: Partial<ShoppingItem>) => {
+    const { error } = await supabase.from('shopping_items').update(updates).eq('id', itemId);
+    if (!error) {
+      setLists(prev => prev.map(l => {
+        if (l.id === listId) {
+          const newItems = l.items.map(i => i.id === itemId ? { ...i, ...updates } : i);
+          return { 
+            ...l, 
+            items: newItems, 
+            totalEstimated: newItems.reduce((acc, curr) => acc + (curr.price || 0) * curr.quantity, 0) 
+          };
+        }
+        return l;
+      }));
+    }
   };
 
-  const setActiveList = (listId: string) => setActiveId(listId);
+  const deleteItem = async (listId: string, itemId: string) => {
+    const { error } = await supabase.from('shopping_items').delete().eq('id', itemId);
+    if (!error) {
+      setLists(prev => prev.map(l => 
+        l.id === listId 
+          ? { ...l, items: l.items.filter(i => i.id !== itemId) } 
+          : l
+      ));
+    }
+  };
+
+  const toggleItem = async (listId: string, itemId: string) => {
+    const item = lists.find(l => l.id === listId)?.items.find(i => i.id === itemId);
+    if (item) {
+      await updateItem(listId, itemId, { completed: !item.completed });
+    }
+  };
+
+  const deleteList = async (listId: string) => {
+    const { error } = await supabase.from('shopping_lists').delete().eq('id', listId);
+    if (!error) {
+      setLists(prev => prev.filter(l => l.id !== listId));
+      if (activeListId === listId) setActiveListId(null);
+    }
+  };
 
   return (
     <AppContext.Provider value={{ 
-      user: currentUser, lists: userLists, activeListId: activeId, fliers,
-      login, register, logout, createList, addItem, updateItem, deleteItem, toggleItem, deleteList, setActiveList
+      user, lists, activeListId, fliers, isLoading,
+      login, register, logout, createList, addItem, updateItem, deleteItem, toggleItem, deleteList, setActiveList: setActiveListId
     }}>
       {children}
     </AppContext.Provider>
@@ -178,6 +228,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 export const useApp = () => {
   const context = useContext(AppContext);
-  if (!context) throw new Error('useApp must be used within AppProvider');
+  if (!context) throw new Error('useApp deve ser usado dentro de um AppProvider');
   return context;
 };

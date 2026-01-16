@@ -15,15 +15,29 @@ import BottomNav from './components/BottomNav';
 
 const AppContent: React.FC = () => {
   const location = useLocation();
-  const { user } = useApp();
+  const { user, isLoading } = useApp();
   
-  // Routes where bottom nav should be hidden
-  const hideBottomNav = ['/', '/confirm'].includes(location.pathname);
+  // Enquanto o Supabase está checando se o usuário está logado
+  if (isLoading) {
+    return (
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-background-dark">
+        <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+        <p className="mt-4 text-white/50 font-bold text-sm tracking-widest uppercase">Sincronizando...</p>
+      </div>
+    );
+  }
 
-  // Simple auth check: if no user and not on welcome, redirect to welcome
+  // Se não estiver logado e não estiver na tela de boas-vindas, manda pra lá
   if (!user && location.pathname !== '/') {
     return <Navigate to="/" replace />;
   }
+
+  // Se estiver logado e tentar ir para a tela de boas-vindas, manda para o Início
+  if (user && location.pathname === '/') {
+    return <Navigate to="/home" replace />;
+  }
+
+  const hideBottomNav = ['/', '/confirm'].includes(location.pathname);
 
   return (
     <div className="min-h-screen pb-safe">
