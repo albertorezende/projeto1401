@@ -7,7 +7,7 @@ const MARKETS = [
   { name: 'Guanabara', color: 'bg-yellow-500' },
   { name: 'Supermarket', color: 'bg-red-600' },
   { name: 'Mundial', color: 'bg-blue-600' },
-  { name: 'Assaí', color: 'bg-orange-600' },
+  { name: 'Assai', color: 'bg-orange-600' },
   { name: 'Carrefour', color: 'bg-blue-800' },
   { name: 'Pão de Açúcar', color: 'bg-green-700' }
 ];
