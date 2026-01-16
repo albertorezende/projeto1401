@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 
@@ -14,10 +14,26 @@ const MARKETS = [
 
 const EncartesScreen: React.FC = () => {
   const navigate = useNavigate();
-  const { fliers } = useApp();
+  const { fliers, refreshFliers } = useApp();
   const [selectedPdf, setSelectedPdf] = useState<{ name: string, url: string } | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Auxiliar para garantir que links do Drive abram em modo preview se necessário
+  useEffect(() => {
+    if (Object.keys(fliers).length === 0) {
+      refreshFliers();
+    }
+  }, []);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await refreshFliers();
+    setTimeout(() => setIsRefreshing(false), 1000);
+  };
+
+  const getFlierUrl = (marketName: string) => {
+    return fliers[marketName.toLowerCase()];
+  };
+
   const getEmbedUrl = (url: string) => {
     if (url.includes('drive.google.com')) {
       return url.replace('/view', '/preview').replace('?usp=sharing', '');
@@ -26,12 +42,8 @@ const EncartesScreen: React.FC = () => {
   };
 
   const handleOpenFlier = (marketName: string) => {
-    const url = fliers[marketName];
-    if (url) {
-      setSelectedPdf({ name: marketName, url });
-    } else {
-      alert(`O encarte do ${marketName} ainda não foi atualizado para esta semana.`);
-    }
+    const url = getFlierUrl(marketName);
+    if (url) setSelectedPdf({ name: marketName, url });
   };
 
   return (
@@ -42,7 +54,13 @@ const EncartesScreen: React.FC = () => {
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
         <h2 className="text-lg font-bold flex-1 text-center text-slate-900 dark:text-white">Encartes</h2>
-        <div className="w-10"></div>
+        <button 
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className={`flex size-10 items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-primary ${isRefreshing ? 'animate-spin' : ''}`}
+        >
+          <span className="material-symbols-outlined">refresh</span>
+        </button>
       </header>
 
       <main className="flex-1 overflow-y-auto no-scrollbar pb-24">
@@ -53,35 +71,47 @@ const EncartesScreen: React.FC = () => {
           <p className="text-xs text-slate-400 mt-2 font-medium">Selecione um mercado para ver as ofertas.</p>
         </div>
 
-        {/* GRID DE MERCADOS - APENAS VISUALIZAÇÃO */}
+        {/* GRID DE MERCADOS */}
         <div className="grid grid-cols-2 gap-4 p-6">
-          {MARKETS.map((market) => (
-            <article 
-              key={market.name} 
-              onClick={() => fliers[market.name] && handleOpenFlier(market.name)}
-              className={`flex flex-col gap-3 rounded-2xl bg-white dark:bg-surface-dark p-3 shadow-sm border transition-all duration-300 ${fliers[market.name] ? 'border-transparent hover:border-primary/20 cursor-pointer active:scale-95' : 'border-slate-100 dark:border-white/5 opacity-60'}`}
-            >
-              <div className={`relative flex h-20 w-full items-center justify-center rounded-xl ${market.color} p-2 shadow-inner overflow-hidden`}>
-                <span className="text-white font-black text-[10px] uppercase tracking-widest z-10 text-center">{market.name}</span>
-                <div className="absolute inset-0 bg-black/10"></div>
-                {fliers[market.name] && (
-                  <div className="absolute top-1 right-1">
-                    <span className="flex h-2 w-2 rounded-full bg-primary animate-pulse"></span>
-                  </div>
-                )}
-              </div>
+          {MARKETS.map((market) => {
+            const flierUrl = getFlierUrl(market.name);
+            return (
+              <article 
+                key={market.name} 
+                onClick={() => flierUrl && handleOpenFlier(market.name)}
+                className={`flex flex-col gap-3 rounded-2xl bg-white dark:bg-surface-dark p-3 shadow-sm border transition-all duration-300 ${flierUrl ? 'border-transparent hover:border-primary/20 cursor-pointer active:scale-95' : 'border-slate-100 dark:border-white/5 opacity-60'}`}
+              >
+                <div className={`relative flex h-20 w-full items-center justify-center rounded-xl ${market.color} p-2 shadow-inner overflow-hidden`}>
+                  <span className="text-white font-black text-[10px] uppercase tracking-widest z-10 text-center">{market.name}</span>
+                  <div className="absolute inset-0 bg-black/10"></div>
+                  {flierUrl && (
+                    <div className="absolute top-1 right-1">
+                      <span className="flex h-2 w-2 rounded-full bg-primary animate-pulse"></span>
+                    </div>
+                  )}
+                </div>
 
-              <div className="flex flex-col gap-2">
-                <button 
-                  className={`w-full rounded-lg py-2 text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${fliers[market.name] ? 'bg-primary text-background-dark' : 'bg-slate-100 dark:bg-white/5 text-slate-400'}`}
-                >
-                  <span className="material-symbols-outlined text-[16px]">{fliers[market.name] ? 'visibility' : 'schedule'}</span>
-                  {fliers[market.name] ? 'Ver Ofertas' : 'Aguarde'}
-                </button>
-              </div>
-            </article>
-          ))}
+                <div className="flex flex-col gap-2">
+                  <button 
+                    disabled={!flierUrl}
+                    className={`w-full rounded-lg py-2 text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${flierUrl ? 'bg-primary text-background-dark' : 'bg-slate-100 dark:bg-white/5 text-slate-400'}`}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">{flierUrl ? 'visibility' : 'schedule'}</span>
+                    {flierUrl ? 'Ver Ofertas' : 'Indisponível'}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
+
+        {Object.keys(fliers).length === 0 && (
+          <div className="mx-6 p-4 bg-orange-50 dark:bg-orange-900/10 rounded-2xl border border-orange-100 dark:border-orange-900/20 text-center mb-4">
+            <p className="text-[10px] text-orange-600 dark:text-orange-400 font-bold uppercase tracking-widest">
+              Nenhum encarte carregado. Verifique o Supabase.
+            </p>
+          </div>
+        )}
 
         <div className="mx-6 p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/10 text-center">
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
@@ -117,10 +147,6 @@ const EncartesScreen: React.FC = () => {
               className="w-full h-full border-none"
               title={`Encarte ${selectedPdf.name}`}
             />
-            {/* Overlay informativo discreto */}
-            <div className="absolute top-4 right-4 pointer-events-none">
-                <span className="bg-black/20 backdrop-blur-md text-white text-[8px] px-2 py-1 rounded-full font-black uppercase tracking-widest">Visualizador Seguro</span>
-            </div>
           </div>
         </div>
       )}

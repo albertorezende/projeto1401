@@ -5,155 +5,134 @@ import { useApp } from '../context/AppContext';
 
 const ImportScreen: React.FC = () => {
   const navigate = useNavigate();
-  const { addItem, createList, activeListId } = useApp();
+  const { addItem, createList, setActiveList } = useApp();
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const processCSV = (text: string) => {
-    const lines = text.split(/\r?\n/);
-    if (lines.length < 2) return [];
+  const parseCSV = (text: string) => {
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length === 0) return [];
 
-    const header = lines[0].toLowerCase();
-    const delimiter = header.includes(';') ? ';' : ',';
+    const firstLine = lines[0].toLowerCase();
+    const delimiter = firstLine.includes(';') ? ';' : ',';
+    
+    // Ignora cabeçalho se existir
+    const hasHeader = firstLine.includes('item') || firstLine.includes('produto') || firstLine.includes('nome');
+    const dataLines = hasHeader ? lines.slice(1) : lines;
 
-    const items = [];
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-
+    return dataLines.map(line => {
       const parts = line.split(delimiter).map(p => p.replace(/^"|"$/g, '').trim());
       
-      if (parts.length >= 2) {
-        const qtyStr = parts[0];
-        const name = parts[1];
-        const category = parts[2] || 'Outros';
+      // Tenta identificar as colunas (Qtd, Nome, Categoria)
+      let name = '';
+      let qty = 1;
+      let cat = 'Outros';
 
-        let qty = parseFloat(qtyStr.replace(',', '.'));
-        if (isNaN(qty)) qty = 1;
-
-        items.push({
-          name: name,
-          quantity: qty,
-          category: category,
-          unit: qtyStr === 'a' ? 'diversos' : 'uni',
-          price: 0
-        });
+      if (parts.length === 1) {
+        name = parts[0];
+      } else if (!isNaN(parseFloat(parts[0].replace(',', '.')))) {
+        // Provável formato: Qtd, Nome, Categoria
+        qty = parseFloat(parts[0].replace(',', '.')) || 1;
+        name = parts[1] || 'Item sem nome';
+        cat = parts[2] || 'Outros';
+      } else {
+        // Provável formato: Nome, Qtd, Categoria
+        name = parts[0];
+        qty = parseFloat(parts[1]?.replace(',', '.')) || 1;
+        cat = parts[2] || 'Outros';
       }
-    }
-    return items;
+
+      return { name, quantity: qty, category: cat, unit: 'uni', price: 0 };
+    }).filter(item => item.name);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.name.endsWith('.csv') && !file.type.includes('csv')) {
-      setError('Por favor, selecione um arquivo CSV válido.');
-      return;
-    }
-
+  const handleFile = async (file: File) => {
     setIsUploading(true);
     setError(null);
 
     const reader = new FileReader();
-    reader.onload = async (event) => {
+    reader.onload = async (e) => {
       try {
-        const content = event.target?.result as string;
-        const parsedItems = processCSV(content);
+        const text = e.target?.result as string;
+        const items = parseCSV(text);
 
-        if (parsedItems.length === 0) {
-          setError('Nenhum item encontrado no arquivo.');
+        if (items.length === 0) {
+          setError("Não encontramos itens válidos no arquivo.");
           setIsUploading(false);
           return;
         }
 
-        // Aguarda a criação da lista se não houver uma ativa
-        let targetListId = activeListId;
-        if (!targetListId) {
-          targetListId = await createList('Lista Importada');
-        }
-
-        if (targetListId) {
-          // Adicionar cada item ao contexto (sequencial para evitar race conditions no DB)
-          for (const item of parsedItems) {
-            await addItem(targetListId, item);
-          }
-
-          setTimeout(() => {
-            setIsUploading(false);
-            navigate('/list');
-          }, 1000);
-        } else {
-          setError('Erro ao criar lista para importação.');
+        const listId = await createList(`Importação ${new Date().toLocaleDateString()}`);
+        if (!listId) {
+          setError("Erro ao criar lista. Verifique as permissões (RLS) no Supabase.");
           setIsUploading(false);
+          return;
         }
 
+        setActiveList(listId);
+        
+        // Adiciona itens em lote (um por um, mas aguardando)
+        for (const item of items) {
+          await addItem(listId, item);
+        }
+
+        navigate('/list');
       } catch (err) {
-        console.error(err);
-        setError('Erro ao processar o arquivo. Verifique o formato.');
+        setError("Erro ao processar o arquivo CSV.");
+      } finally {
         setIsUploading(false);
       }
     };
-
-    reader.onerror = () => {
-      setError('Erro ao ler o arquivo.');
-      setIsUploading(false);
-    };
-
-    reader.readAsText(file, 'UTF-8');
+    reader.readAsText(file);
   };
 
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen flex flex-col max-w-lg mx-auto w-full">
-      <header className="flex items-center justify-between px-6 py-4 sticky top-0 z-10 bg-background-light/90 dark:bg-background-dark/90 backdrop-blur-md">
-        <button onClick={() => navigate('/home')} className="flex size-10 items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10">
+      <header className="flex items-center justify-between px-6 py-4 bg-white/80 dark:bg-background-dark/80 backdrop-blur-md sticky top-0 z-10">
+        <button onClick={() => navigate('/home')} className="size-10 flex items-center justify-center rounded-full hover:bg-black/5">
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
-        <h1 className="text-lg font-bold text-center flex-1 pr-10">Importar Lista</h1>
+        <h1 className="text-lg font-bold">Importar Lista</h1>
+        <div className="w-10"></div>
       </header>
 
-      <main className="flex-1 flex flex-col px-6 pb-24 gap-6 w-full">
-        <div className="relative w-full aspect-[4/5] flex flex-col items-center justify-center p-8 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl bg-white dark:bg-surface-dark transition-all group overflow-hidden shadow-sm">
+      <main className="p-6 flex flex-col gap-6">
+        <div className="border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl p-10 flex flex-col items-center justify-center text-center bg-white dark:bg-surface-dark relative">
           {isUploading ? (
-            <div className="flex flex-col items-center gap-4 animate-fade-in">
-              <div className="relative">
-                <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
-                <span className="material-symbols-outlined absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-primary">sync</span>
-              </div>
-              <p className="font-bold text-primary text-lg">Processando...</p>
+            <div className="animate-pulse flex flex-col items-center gap-3">
+              <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+              <p className="font-bold text-primary">Importando...</p>
             </div>
           ) : (
             <>
-              <div className="relative mb-8 text-center">
-                <span className="material-symbols-outlined text-primary text-6xl">table_view</span>
-              </div>
-              <div className="text-center">
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Selecione seu CSV</h3>
-                <p className="text-sm text-slate-500 mt-2">quantidade, item, categoria</p>
-              </div>
+              <span className="material-symbols-outlined text-5xl text-slate-300 mb-4">upload_file</span>
+              <h3 className="font-bold text-slate-900 dark:text-white">Arraste seu arquivo CSV</h3>
+              <p className="text-xs text-slate-400 mt-2 leading-relaxed">Formatos suportados: Vírgula (,) ou Ponto e Vírgula (;)</p>
+              <input 
+                type="file" 
+                accept=".csv" 
+                onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+              />
             </>
           )}
-          <input 
-            type="file" 
-            accept=".csv" 
-            className="absolute inset-0 opacity-0 cursor-pointer"
-            onChange={handleFileChange}
-            disabled={isUploading}
-          />
         </div>
 
         {error && (
-          <div className="bg-danger/10 border border-danger/20 rounded-2xl p-4 flex items-start gap-3">
+          <div className="bg-danger/10 border border-danger/20 p-4 rounded-2xl flex items-center gap-3">
             <span className="material-symbols-outlined text-danger">error</span>
-            <p className="text-danger text-sm font-bold">{error}</p>
+            <p className="text-danger text-xs font-bold">{error}</p>
           </div>
         )}
 
-        <label className="flex w-full items-center justify-center rounded-2xl h-16 bg-primary text-background-dark font-black shadow-glow cursor-pointer">
-          <span className="material-symbols-outlined mr-2">upload_file</span>
-          CARREGAR CSV
-          <input type="file" accept=".csv" className="hidden" onChange={handleFileChange} disabled={isUploading} />
-        </label>
+        <div className="bg-slate-50 dark:bg-white/5 p-5 rounded-2xl border border-slate-100 dark:border-white/10">
+          <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Exemplo de Formato Aceito:</h4>
+          <code className="text-[10px] text-primary bg-black/5 dark:bg-black/20 p-2 rounded block">
+            Qtd, Item, Categoria<br/>
+            2, Leite, Laticínios<br/>
+            1, Arroz, Outros
+          </code>
+        </div>
       </main>
     </div>
   );
