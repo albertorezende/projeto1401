@@ -36,55 +36,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const fetchFliers = async () => {
     try {
-      const { data: flierData, error } = await supabase.from('fliers').select('market_name, url');
-      if (!error && flierData) {
-        const flierMap = flierData.reduce((acc: Record<string, string>, curr: any) => ({ 
+      console.log("Buscando encartes...");
+      const { data, error } = await supabase.from('fliers').select('market_name, url');
+      if (error) throw error;
+      
+      if (data) {
+        const flierMap = data.reduce((acc: Record<string, string>, curr: any) => ({ 
           ...acc, 
           [curr.market_name]: curr.url 
         }), {});
         setFliers(flierMap);
+        console.log("Encartes carregados:", flierMap);
       }
     } catch (e) {
-      console.warn("Tabela 'fliers' ainda não existe ou está inacessível.");
+      console.warn("Aviso: Tabela 'fliers' não encontrada ou vazia. Crie-a no Supabase para ver os encartes.");
     }
   };
 
   const fetchUserLists = async (userId: string) => {
     try {
+      console.log("Buscando listas do usuário:", userId);
       const { data, error } = await supabase
         .from('shopping_lists')
         .select('*, items:shopping_items(*)')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
+      if (error) throw error;
+
+      if (data) {
         const formattedLists: ShoppingList[] = data.map((l: any) => ({
           id: l.id,
           name: l.name,
           date: l.created_at,
           status: l.status,
-          totalEstimated: l.items.reduce((acc: number, i: any) => acc + (i.price || 0) * i.quantity, 0),
-          items: l.items
+          totalEstimated: (l.items || []).reduce((acc: number, i: any) => acc + (i.price || 0) * i.quantity, 0),
+          items: l.items || []
         }));
         setLists(formattedLists);
-        if (formattedLists.length > 0 && !activeListId) setActiveListId(formattedLists[0].id);
+        if (formattedLists.length > 0) setActiveListId(formattedLists[0].id);
       }
     } catch (e) {
-      console.warn("Erro ao buscar listas ou tabelas inexistentes.");
+      console.warn("Aviso: Erro ao carregar listas. Verifique se as tabelas existem.");
     }
   };
 
   useEffect(() => {
-    // TIMEOUT DE SEGURANÇA: Se o Supabase demorar demais, libera o app após 6 segundos
-    const safetyTimeout = setTimeout(() => {
+    // FORÇAR ABERTURA: Se em 5 segundos não carregar, libera o app
+    const timer = setTimeout(() => {
       if (isLoading) {
-        console.warn("Conexão demorada com Supabase. Liberando interface via timeout.");
+        console.log("Timeout de segurança atingido. Liberando app...");
         setIsLoading(false);
       }
-    }, 6000);
+    }, 5000);
 
     const initApp = async () => {
       try {
+        console.log("Iniciando App...");
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
@@ -98,16 +106,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         await fetchFliers();
       } catch (error) {
-        console.error("Erro na inicialização:", error);
+        console.error("Erro crítico na inicialização:", error);
       } finally {
+        console.log("Inicialização concluída.");
         setIsLoading(false);
-        clearTimeout(safetyTimeout);
+        clearTimeout(timer);
       }
     };
 
     initApp();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event: any, session: any) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session) {
         setUser({
           id: session.user.id,
@@ -125,14 +134,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return () => {
       subscription.unsubscribe();
-      clearTimeout(safetyTimeout);
+      clearTimeout(timer);
     };
   }, []);
 
   const login = async (email: string, pass: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
     if (error) return { success: false, message: error.message };
-    if (data.user) await fetchUserLists(data.user.id);
     return { success: true, message: 'Sucesso' };
   };
 
@@ -182,7 +190,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         l.id === listId 
           ? { 
               ...l, 
-              items: [...l.items, data], 
+              items: [...(l.items || []), data], 
               totalEstimated: l.totalEstimated + ((data.price || 0) * data.quantity) 
             } 
           : l
@@ -219,7 +227,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleItem = async (listId: string, itemId: string) => {
-    const item = lists.find(l => l.id === listId)?.items.find(i => i.id === itemId);
+    const list = lists.find(l => l.id === listId);
+    const item = list?.items.find(i => i.id === itemId);
     if (item) {
       await updateItem(listId, itemId, { completed: !item.completed });
     }
